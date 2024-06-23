@@ -30,11 +30,13 @@ Get JSON payload for NetAtmo dashboard. See http://netatmo.com, https://dev.neta
 RED.nodes.registerType('netatmo-config-node',{
   category: 'config',
   defaults: {
-      name: {value:"",required:true},
-      client_id: {value:"",required:true},
-      client_secret: {value:"",required:true},
-      refresh_token: {value:"",required:true}
+      name: {value:"",required:true}
   },
+  credentials: {
+    client_id: { type: "text" },
+    client_secret: { type: "password" },
+    refresh_token: { type: "password" }
+  },  
   label: function() {
     return 'Netatmo device: ' + this.name;
   }

@@ -32,12 +32,12 @@ const callRefreshToken = ({ clientId, clientSecret, refreshToken }) => {
           let json;
           try {
             json = JSON.parse(responseStr);
-            resolve(json.access_token);
+            resolve(json);
           } catch (e) {
             reject(e);
           }
         } else {
-          reject('Unable to refresh the access token');
+          reject(`Unable to refresh the access token: ${responseStr}`);
         }
       });
     })
@@ -45,6 +45,8 @@ const callRefreshToken = ({ clientId, clientSecret, refreshToken }) => {
       .on('error', (error) => {
         callback(error);
       });
+    
+
     request.write(`grant_type=refresh_token&refresh_token=${encodeURI(refreshToken)}&client_id=${clientId}&client_secret=${clientSecret}`);
     request.end();
   });
@@ -60,21 +62,39 @@ module.exports = function (RED) {
       // send/done compatibility for node-red < 1.0
       send = send || function () { node.send.apply(node, arguments) };
       done = done || function (error) { node.error.call(node, error, msg) };
-
-      const clientSecret = this.creds.client_secret;
-      const clientId = this.creds.client_id;
-      const refreshToken = this.creds.refresh_token;
-
       let data;
+      let clientSecret 
+      let clientId 
+      let refreshToken 
       try {
+
+        const newcreds = RED.nodes.getCredentials(this.creds.id.substring(this.creds.id.length - 16));
+        if (newcreds) {
+           clientSecret = newcreds.client_secret;
+           clientId = newcreds.client_id;
+           refreshToken = newcreds.refresh_token;
+        } else {
+          throw "No Config!"
+        }
+
         // for some reason the same request with node-fetch is not working
-        const refreshedToken = await callRefreshToken({ clientSecret, clientId, refreshToken });;
+        const refreshedTokens = await callRefreshToken({ clientSecret, clientId, refreshToken });;
+
+        const accessToken = refreshedTokens.access_token
+        const newRefreshToken  = refreshedTokens.refresh_token
+
+        // Speichern der aktualisierten Anmeldeinformationen
+        RED.nodes.addCredentials(this.creds.id.substring(this.creds.id.length - 16), {
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: newRefreshToken
+        });
 
         // Get Station data (GET https://api.netatmo.com/api/getstationsdata?get_favorites=false)
         const response = await fetch("https://api.netatmo.com/api/getstationsdata", {
           method: 'GET',
           headers: {
-            Authorization: `Bearer ${refreshedToken}`
+            Authorization: `Bearer ${accessToken}`
           }
         });
         data = await response.json();
@@ -202,10 +222,19 @@ module.exports = function (RED) {
 
   function NetatmoConfigNode(n) {
     RED.nodes.createNode(this, n);
-    this.client_id = n.client_id;
-    this.client_secret = n.client_secret;
-    this.refresh_token = n.refresh_token;
+    const credentials = RED.nodes.getCredentials(n.id);
+    if (credentials) {
+      this.client_id = credentials.client_id;
+      this.client_secret = credentials.client_secret;
+      this.refresh_token = credentials.refresh_token;
+    }
   }
-  RED.nodes.registerType('netatmo-config-node', NetatmoConfigNode);
+  RED.nodes.registerType('netatmo-config-node', NetatmoConfigNode, {
+    credentials: {
+      client_id: { type: "text" },
+      client_secret: { type: "password" },
+      refresh_token: { type: "password" }
+    }
+  });
 
 };
