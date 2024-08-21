@@ -1,6 +1,34 @@
 const _ = require('underscore');
 const fetch = require('node-fetch');
 const httpTransport = require('https');
+const fs = require('fs');
+const path = require('path');
+
+const credentialsFilePath = path.join(__dirname, 'credentials.json');
+
+function saveCredentials(id, credentials) {
+  let allCredentials = {};
+  if (fs.existsSync(credentialsFilePath)) {
+    allCredentials = JSON.parse(fs.readFileSync(credentialsFilePath, 'utf8'));
+  }
+  allCredentials[id] = credentials;
+  fs.writeFileSync(credentialsFilePath, JSON.stringify(allCredentials, null, 2), 'utf8');
+}
+
+function loadCredentials(id) {
+  if (fs.existsSync(credentialsFilePath)) {
+    const allCredentials = JSON.parse(fs.readFileSync(credentialsFilePath, 'utf8'));
+    return allCredentials[id];
+  }
+  return null;
+}
+
+function init(id, RED) {
+  const credentials = loadCredentials(id);
+  if (credentials) {
+    RED.nodes.addCredentials(id, credentials);
+  }
+}
 
 const callRefreshToken = ({ clientId, clientSecret, refreshToken }) => {
   return new Promise((resolve, reject) => {
@@ -58,6 +86,7 @@ module.exports = function (RED) {
     RED.nodes.createNode(this, config);
     this.creds = RED.nodes.getNode(config.creds);
     var node = this;
+    init(this.creds.id.substring(this.creds.id.length - 16), RED);
     this.on('input', async function (msg, send, done) {
       // send/done compatibility for node-red < 1.0
       send = send || function () { node.send.apply(node, arguments) };
@@ -83,12 +112,14 @@ module.exports = function (RED) {
         const accessToken = refreshedTokens.access_token
         const newRefreshToken  = refreshedTokens.refresh_token
 
-        // Speichern der aktualisierten Anmeldeinformationen
-        RED.nodes.addCredentials(this.creds.id.substring(this.creds.id.length - 16), {
+        const updatedCredentials = {
           client_id: clientId,
           client_secret: clientSecret,
           refresh_token: newRefreshToken
-        });
+        };
+        // Speichern der aktualisierten Anmeldeinformationen
+        RED.nodes.addCredentials(this.creds.id.substring(this.creds.id.length - 16), updatedCredentials);
+        saveCredentials(this.creds.id.substring(this.creds.id.length - 16), updatedCredentials);
 
         // Get Station data (GET https://api.netatmo.com/api/getstationsdata?get_favorites=false)
         const response = await fetch("https://api.netatmo.com/api/getstationsdata", {
